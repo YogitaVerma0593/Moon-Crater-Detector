@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moon Crater Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(to bottom, #0b3d91, #1a1a2e) fixed;
+            color: #ececec;
+            overflow: hidden;
+        }
+
+        .container {
+            background: rgba(30, 30, 30, 0.9);
+            border-radius: 12px;
+            padding: 40px;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 25px;
+            color: #00d4ff;
+            text-shadow: 3px 3px 8px rgba(0, 0, 0, 0.5);
+            letter-spacing: 1px;
+        }
+
+        .upload-btn, .detect-btn {
+            display: inline-block;
+            margin: 15px 10px;
+            padding: 12px 30px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #ffffff;
+            background: linear-gradient(135deg, #00d4ff, #0078d4);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .upload-btn:hover, .detect-btn:hover {
+            background: linear-gradient(135deg, #0078d4, #00d4ff);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        canvas {
+            display: block;
+            border: 2px solid #00d4ff;
+            border-radius: 10px;
+            margin-top: 20px;
+            max-width: 100%;
+            height: auto;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .instructions {
+            font-size: 0.9rem;
+            margin-top: 15px;
+            color: #cccccc;
+            text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .loading {
+            font-size: 1.2rem;
+            color: #cccccc;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Automatic Crater Detector On The Moon</h1>
+
+        <label for="uploadInput" class="upload-btn">Upload Image</label>
+        <input id="uploadInput" type="file" accept="image/*"/>
+        
+        <button class="detect-btn" id="detectButton" disabled>Detect</button>
+        
+        <canvas></canvas>
+
+        <p class="instructions">Upload an image to detect craters, then click "Detect" to view results.</p>
+        <p class="loading" id="loadingMessage" style="display: none;">Processing...</p>
+    </div>
+
+    <script>
+        const input = document.getElementById("uploadInput");
+        const detectButton = document.getElementById("detectButton");
+        const loadingMessage = document.getElementById("loadingMessage");
+        const canvas = document.querySelector("canvas");
+        let selectedFile;
+
+        input.addEventListener("change", (event) => {
+            selectedFile = event.target.files[0];
+            detectButton.disabled = !selectedFile;
+        });
+
+        detectButton.addEventListener("click", async () => {
+            if (!selectedFile) return;
+
+            detectButton.disabled = true;
+            loadingMessage.style.display = "block";
+
+            const resizedImage = await resizeImage(selectedFile);
+            const data = new FormData();
+            data.append("image_file", resizedImage, "image_file");
+
+            try {
+                const response = await fetch("/detect", {
+                    method: "post",
+                    body: data
+                });
+                const boxes = await response.json();
+                draw_image_and_boxes(resizedImage, boxes);
+            } catch (error) {
+                console.error("Detection error:", error);
+            } finally {
+                detectButton.disabled = false;
+                loadingMessage.style.display = "none";
+            }
+        });
+
+        async function resizeImage(file) {
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+            await img.decode();
+
+            // Scale down the image if it's too large for the canvas
+            const maxCanvasWidth = 800;
+            const scale = Math.min(maxCanvasWidth / img.width, 1);
+            const width = img.width * scale;
+            const height = img.height * scale;
+
+            // Set canvas size based on the resized dimensions
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            return new Promise((resolve) => {
+                canvas.toBlob(resolve, "image/jpeg", 0.8);
+            });
+        }
+
+        function draw_image_and_boxes(imageBlob, boxes) {
+            const img = new Image();
+            img.src = URL.createObjectURL(imageBlob);
+            img.onload = () => {
+                const ctx = canvas.getContext("2d");
+
+                // Clear canvas and draw the image fully within the canvas bounds
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                // Draw detection boxes
+                ctx.strokeStyle = "#00d4ff";
+                ctx.lineWidth = 3;
+                ctx.font = "18px Arial";
+                boxes.forEach(([x1, y1, x2, y2, label]) => {
+                    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                    ctx.fillStyle = "#00d4ff";
+                    const width = ctx.measureText(label).width;
+                    ctx.fillRect(x1, y1 - 20, width + 10, 20);
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillText(label, x1 + 5, y1 - 5);
+                });
+            };
+        }
+    </script>
+</body>
+</html>

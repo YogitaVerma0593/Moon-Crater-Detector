@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['crater']
+
+roboflow:
+  workspace: craters-detector
+  project: craters-detector-sw2wt
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/craters-detector/craters-detector-sw2wt/dataset/2
